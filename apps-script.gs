@@ -1,179 +1,261 @@
 /**
- * VITALAE — Google Apps Script para guardar respuestas del cuestionario en Google Sheets
+ * VITALAE — Google Apps Script
  *
- * INSTRUCCIONES DE INSTALACIÓN:
+ * Este script hace DOS cosas:
+ *   1. Guarda las respuestas del cuestionario en la hoja "Respuestas"
+ *   2. Cuenta y devuelve el número de visitas al sitio (hoja "Contador")
  *
- * 1. Abre tu Google Sheet:
- *    https://docs.google.com/spreadsheets/d/1CvDz8odzYO9t4-dRMjMcvqw41LfTZlJ0-6PnzJ51Vps/edit
+ * INSTRUCCIONES DE INSTALACIÓN — Sigue exactamente estos pasos:
  *
- * 2. Ve al menú: Extensiones → Apps Script
+ * PASO 1: Abre tu Google Sheet
+ *   https://docs.google.com/spreadsheets/d/1CvDz8odzYO9t4-dRMjMcvqw41LfTZlJ0-6PnzJ51Vps/edit
  *
- * 3. Borra todo el código que aparece por defecto (function myFunction() {})
+ * PASO 2: Menú superior → Extensiones → Apps Script
+ *   Se abre una pestaña nueva con un editor de código.
  *
- * 4. Pega TODO este archivo dentro
+ * PASO 3: Borra TODO el código que aparece (habrá "function myFunction() {}")
  *
- * 5. Haz clic en el ícono de guardar (💾)
+ * PASO 4: Copia y pega TODO el contenido de este archivo dentro del editor
  *
- * 6. Haz clic en "Desplegar" (arriba derecha) → "Nueva implementación"
+ * PASO 5: Guarda con Ctrl+S (o el ícono de disco 💾)
+ *   El proyecto te va a pedir un nombre. Ponle "Vitalae".
  *
- * 7. En "Seleccionar tipo" (ícono engranaje ⚙️) elige "Aplicación web"
+ * PASO 6: Haz clic en "Desplegar" (arriba a la derecha) → "Nueva implementación"
  *
- * 8. Configura así:
- *    - Descripción: "Vitalae quiz responses"
- *    - Ejecutar como: "Yo (tu email)"
- *    - Quién tiene acceso: "Cualquier persona"  ← IMPORTANTE
+ * PASO 7: Junto a "Seleccionar tipo" hay un ícono de engranaje ⚙️.
+ *   Haz clic ahí y elige "Aplicación web".
  *
- * 9. Haz clic en "Desplegar"
+ * PASO 8: Configura EXACTAMENTE así:
+ *   - Descripción: "Vitalae endpoint"
+ *   - Ejecutar como: "Yo (tu-email@gmail.com)"
+ *   - Quién tiene acceso: **CUALQUIER PERSONA** (muy importante)
  *
- * 10. Autoriza los permisos cuando Google te lo pida
- *     (te va a decir "Google no verificó esta app" → clic en "Configuración avanzada"
- *      → "Ir a Vitalae quiz (no seguro)" → Permitir)
+ * PASO 9: Haz clic en "Desplegar"
  *
- * 11. Copia la URL que Google te muestra (termina en /exec)
+ * PASO 10: Google te pedirá autorización.
+ *   - Elige tu cuenta
+ *   - Verás "Google no verificó esta app" → clic en "Configuración avanzada"
+ *   - Clic en "Ir a Vitalae (no seguro)"
+ *   - Clic en "Permitir"
  *
- * 12. Abre tu index.html del sitio y busca esta línea:
- *     SHEETS_WEBAPP_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
+ * PASO 11: Copia la URL que aparece. Termina en "/exec". Ejemplo:
+ *   https://script.google.com/macros/s/AKfycbz.../exec
  *
- *     Reemplaza 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL' por la URL que copiaste.
+ * PASO 12: Abre tu index.html en un editor de texto. Busca esta línea:
+ *   SHEETS_WEBAPP_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
+ *   Reemplaza el texto de comillas por tu URL. Guarda.
  *
- * 13. Guarda index.html y súbelo a GitHub. Listo.
+ * PASO 13: Sube el index.html actualizado a GitHub. Listo.
  *
- * NOTA: Si algún día necesitas actualizar este código, tienes que hacer
- * "Nueva implementación" nuevamente y actualizar la URL en el sitio.
+ * PASO 14 (VERIFICACIÓN): Abre la URL del Web App en tu navegador.
+ *   Si ves algo como {"status":"ok","service":"Vitalae"...} funciona bien.
+ *   Si ves error, revisa que hayas puesto "Cualquier persona" en el paso 8.
  */
 
 // ============================
 // CONFIGURACIÓN
 // ============================
-const SHEET_NAME = 'Respuestas'; // Nombre de la hoja donde guardar los datos
+const RESPONSES_SHEET = 'Respuestas';
+const COUNTER_SHEET = 'Contador';
 
 // ============================
-// FUNCIÓN PRINCIPAL
+// doGet — Maneja el contador de visitas (via JSONP)
+// ============================
+function doGet(e) {
+  const params = e.parameter || {};
+  const action = params.action || 'status';
+
+  // Contador de visitas
+  if (action === 'visit') {
+    const count = incrementVisitCounter();
+    return jsonpResponse({ status: 'ok', count: count }, params.callback);
+  }
+
+  // Solo leer el contador sin incrementar
+  if (action === 'count') {
+    const count = getVisitCounter();
+    return jsonpResponse({ status: 'ok', count: count }, params.callback);
+  }
+
+  // Guardar respuesta del quiz (para casos donde POST no funciona por CORS)
+  if (action === 'save') {
+    try {
+      const data = {
+        timestamp: params.timestamp || new Date().toISOString(),
+        genero: params.genero || '',
+        edad: params.edad || '',
+        usa_cannabis: params.usa || '',
+        forma_uso: params.forma || '',
+        referrer: params.referrer || 'direct',
+        user_agent: params.ua || ''
+      };
+      saveQuizResponse(data);
+      return jsonpResponse({ status: 'saved' }, params.callback);
+    } catch (err) {
+      return jsonpResponse({ status: 'error', message: String(err) }, params.callback);
+    }
+  }
+
+  // Status por defecto (verificar que el endpoint funciona)
+  return jsonpResponse({
+    status: 'ok',
+    service: 'Vitalae endpoint',
+    timestamp: new Date().toISOString(),
+    actions: ['visit', 'count', 'save']
+  }, params.callback);
+}
+
+// ============================
+// doPost — Maneja respuestas del quiz (via POST)
 // ============================
 function doPost(e) {
   try {
-    // Parse the incoming data
     const data = JSON.parse(e.postData.contents);
-
-    // Get the active spreadsheet
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = ss.getSheetByName(SHEET_NAME);
-
-    // Create sheet with headers if it doesn't exist
-    if (!sheet) {
-      sheet = ss.insertSheet(SHEET_NAME);
-      sheet.appendRow([
-        'Fecha',
-        'Hora',
-        'Género',
-        'Edad',
-        'Usa cannabis',
-        'Forma de uso',
-        'Referrer',
-        'User Agent'
-      ]);
-      // Format header row
-      const headerRange = sheet.getRange(1, 1, 1, 8);
-      headerRange.setFontWeight('bold');
-      headerRange.setBackground('#2D5F4F');
-      headerRange.setFontColor('#FFFFFF');
-      sheet.setFrozenRows(1);
-      // Set column widths
-      sheet.setColumnWidth(1, 100);
-      sheet.setColumnWidth(2, 80);
-      sheet.setColumnWidth(3, 150);
-      sheet.setColumnWidth(4, 120);
-      sheet.setColumnWidth(5, 120);
-      sheet.setColumnWidth(6, 180);
-      sheet.setColumnWidth(7, 200);
-      sheet.setColumnWidth(8, 300);
-    }
-
-    // Parse timestamp
-    const timestamp = new Date(data.timestamp || new Date());
-    const fecha = Utilities.formatDate(timestamp, 'America/Santiago', 'yyyy-MM-dd');
-    const hora = Utilities.formatDate(timestamp, 'America/Santiago', 'HH:mm:ss');
-
-    // Map values to human-readable Spanish
-    const generoMap = {
-      'femenino': 'Femenino',
-      'masculino': 'Masculino',
-      'no-binario': 'No binario',
-      'prefiero-no-decir': 'Prefiero no decirlo'
-    };
-    const edadMap = {
-      '18-24': 'Entre 18 y 24 años',
-      '25-64': 'Entre 25 y 64 años',
-      '65+': '65 años o más'
-    };
-    const usaMap = {
-      'si': 'Sí',
-      'no': 'No'
-    };
-    const formaMap = {
-      'alimento': 'Alimento (oral)',
-      'vaporizada': 'Vaporización',
-      'combustion': 'Combustión'
-    };
-
-    // Append the response row
-    sheet.appendRow([
-      fecha,
-      hora,
-      generoMap[data.genero] || data.genero || '',
-      edadMap[data.edad] || data.edad || '',
-      usaMap[data.usa_cannabis] || data.usa_cannabis || '',
-      formaMap[data.forma_uso] || data.forma_uso || '',
-      data.referrer || '',
-      data.user_agent || ''
-    ]);
-
+    saveQuizResponse(data);
     return ContentService
-      .createTextOutput(JSON.stringify({ status: 'success' }))
+      .createTextOutput(JSON.stringify({ status: 'saved' }))
       .setMimeType(ContentService.MimeType.JSON);
-
   } catch (error) {
     return ContentService
-      .createTextOutput(JSON.stringify({ status: 'error', message: error.toString() }))
+      .createTextOutput(JSON.stringify({ status: 'error', message: String(error) }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 // ============================
-// FUNCIÓN GET (para verificar que el Web App funciona)
+// Guardar respuesta del quiz
 // ============================
-// Puedes abrir la URL del Web App en el navegador y debe mostrar:
-// { "status": "ok", "service": "Vitalae Quiz Endpoint" }
-function doGet(e) {
+function saveQuizResponse(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(RESPONSES_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(RESPONSES_SHEET);
+    sheet.appendRow([
+      'Fecha',
+      'Hora',
+      'Género',
+      'Edad',
+      'Usa cannabis',
+      'Forma de uso',
+      'Referrer',
+      'User Agent'
+    ]);
+    const headerRange = sheet.getRange(1, 1, 1, 8);
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#2D5F4F');
+    headerRange.setFontColor('#FFFFFF');
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 100);
+    sheet.setColumnWidth(2, 80);
+    sheet.setColumnWidth(3, 150);
+    sheet.setColumnWidth(4, 130);
+    sheet.setColumnWidth(5, 120);
+    sheet.setColumnWidth(6, 180);
+    sheet.setColumnWidth(7, 200);
+    sheet.setColumnWidth(8, 300);
+  }
+
+  const timestamp = new Date(data.timestamp || new Date());
+  const fecha = Utilities.formatDate(timestamp, 'America/Santiago', 'yyyy-MM-dd');
+  const hora = Utilities.formatDate(timestamp, 'America/Santiago', 'HH:mm:ss');
+
+  const generoMap = {
+    'femenino': 'Femenino',
+    'masculino': 'Masculino',
+    'no-binario': 'No binario',
+    'prefiero-no-decir': 'Prefiero no decirlo'
+  };
+  const edadMap = {
+    '18-24': 'Entre 18 y 24 años',
+    '25-64': 'Entre 25 y 64 años',
+    '65+': '65 años o más'
+  };
+  const usaMap = { 'si': 'Sí', 'no': 'No' };
+  const formaMap = {
+    'alimento': 'Alimento (oral)',
+    'vaporizada': 'Vaporización',
+    'combustion': 'Combustión'
+  };
+
+  sheet.appendRow([
+    fecha,
+    hora,
+    generoMap[data.genero] || data.genero || '',
+    edadMap[data.edad] || data.edad || '',
+    usaMap[data.usa_cannabis] || data.usa_cannabis || '',
+    formaMap[data.forma_uso] || data.forma_uso || '',
+    data.referrer || '',
+    data.user_agent || ''
+  ]);
+}
+
+// ============================
+// Contador de visitas
+// ============================
+function incrementVisitCounter() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(COUNTER_SHEET);
+
+  if (!sheet) {
+    sheet = ss.insertSheet(COUNTER_SHEET);
+    sheet.appendRow(['Métrica', 'Valor', 'Última actualización']);
+    const headerRange = sheet.getRange(1, 1, 1, 3);
+    headerRange.setFontWeight('bold');
+    headerRange.setBackground('#2D5F4F');
+    headerRange.setFontColor('#FFFFFF');
+    sheet.appendRow(['Visitas totales', 0, '']);
+    sheet.setFrozenRows(1);
+  }
+
+  // Fila 2 = visitas totales
+  const currentValue = sheet.getRange(2, 2).getValue() || 0;
+  const newValue = Number(currentValue) + 1;
+  sheet.getRange(2, 2).setValue(newValue);
+  sheet.getRange(2, 3).setValue(new Date());
+
+  return newValue;
+}
+
+function getVisitCounter() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(COUNTER_SHEET);
+  if (!sheet) return 0;
+  return Number(sheet.getRange(2, 2).getValue()) || 0;
+}
+
+// ============================
+// Helper para responder con JSONP o JSON según callback
+// ============================
+function jsonpResponse(obj, callback) {
+  const json = JSON.stringify(obj);
+  if (callback) {
+    return ContentService
+      .createTextOutput(callback + '(' + json + ')')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
   return ContentService
-    .createTextOutput(JSON.stringify({
-      status: 'ok',
-      service: 'Vitalae Quiz Endpoint',
-      timestamp: new Date().toISOString()
-    }))
+    .createTextOutput(json)
     .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ============================
-// FUNCIÓN DE TEST (opcional)
+// Función de test (opcional — puedes ejecutarla desde el editor de Apps Script)
 // ============================
-// Ejecuta esta función desde el editor de Apps Script para probar la conexión.
-// En el menú de Apps Script, selecciona 'testSave' y haz clic en el botón ▶ Ejecutar.
-// Debería crear una fila de prueba en tu hoja.
-function testSave() {
-  const testData = {
-    postData: {
-      contents: JSON.stringify({
-        timestamp: new Date().toISOString(),
-        genero: 'femenino',
-        edad: '25-64',
-        usa_cannabis: 'no',
-        forma_uso: '',
-        referrer: 'test',
-        user_agent: 'Apps Script Test'
-      })
-    }
-  };
-  const result = doPost(testData);
-  Logger.log(result.getContent());
+function testSetup() {
+  // Simular una visita
+  const count = incrementVisitCounter();
+  Logger.log('Nueva visita registrada. Total: ' + count);
+
+  // Simular una respuesta del quiz
+  saveQuizResponse({
+    timestamp: new Date().toISOString(),
+    genero: 'femenino',
+    edad: '25-64',
+    usa_cannabis: 'no',
+    forma_uso: '',
+    referrer: 'test',
+    user_agent: 'Apps Script Test'
+  });
+  Logger.log('Respuesta de prueba guardada.');
 }

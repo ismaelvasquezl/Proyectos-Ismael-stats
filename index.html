@@ -30,7 +30,6 @@
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="preconnect" href="https://counterapi.com">
 <link rel="preconnect" href="https://script.google.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
@@ -908,7 +907,8 @@ a:focus-visible, button:focus-visible {
   border: 1px dashed rgba(45, 95, 79, 0.25);
   border-radius: 50%;
   z-index: 0;
-  animation: rotate 40s linear infinite;
+  animation: heroOrbitRotate 80s linear infinite;
+  will-change: transform;
 }
 .hero-orbit::before, .hero-orbit::after {
   content: '';
@@ -928,7 +928,7 @@ a:focus-visible, button:focus-visible {
   left: 100%;
   background: var(--primary-light);
 }
-@keyframes rotate {
+@keyframes heroOrbitRotate {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
@@ -3007,16 +3007,24 @@ section { padding: 100px 0; position: relative; }
 // CONFIGURATION
 // ============================
 const CONFIG = {
-  // Google Apps Script Web App URL for saving quiz responses
-  // See README for setup instructions. Replace with your deployed Apps Script URL.
-  SHEETS_WEBAPP_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
+  // ÚNICA URL que necesitas configurar: el Web App de Google Apps Script
+  // Este endpoint maneja tanto el guardado del quiz como el contador de visitas.
+  // Ver README para instrucciones de setup.
+  APPS_SCRIPT_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
 
-  // Delay before showing initial popup (ms)
+  // Delay antes de mostrar el popup inicial (ms)
   POPUP_DELAY: 2200,
 
-  // Days before showing popup again to the same visitor
-  POPUP_COOLDOWN_DAYS: 7
+  // Días antes de mostrar el popup de nuevo al mismo visitante
+  POPUP_COOLDOWN_DAYS: 7,
+
+  // Debug: pon en true para ver diagnósticos en la consola del navegador
+  DEBUG: false
 };
+
+function debugLog(...args) {
+  if (CONFIG.DEBUG) console.log('[Vitalae]', ...args);
+}
 
 document.documentElement.classList.add('js-loaded');
 
@@ -3165,8 +3173,9 @@ function showResult() {
 // SEND RESPONSES TO GOOGLE SHEETS
 // ============================
 function sendResponsesToSheets(data) {
-  if (!CONFIG.SHEETS_WEBAPP_URL || CONFIG.SHEETS_WEBAPP_URL.startsWith('REPLACE_WITH')) {
-    console.info('[Vitalae] Sheets integration not configured. Responses:', data);
+  if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('REPLACE_WITH')) {
+    console.warn('[Vitalae] Apps Script URL no configurada. Configura CONFIG.APPS_SCRIPT_URL para guardar respuestas.');
+    debugLog('Respuestas del quiz (no guardadas):', data);
     return;
   }
 
@@ -3177,24 +3186,64 @@ function sendResponsesToSheets(data) {
     usa_cannabis: data.usa || '',
     forma_uso: data.forma || '',
     referrer: document.referrer || 'direct',
-    user_agent: navigator.userAgent.substring(0, 200)
+    user_agent: (navigator.userAgent || '').substring(0, 200)
   };
 
-  // Using no-cors mode with text/plain so Apps Script accepts it without preflight
-  fetch(CONFIG.SHEETS_WEBAPP_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(payload)
-  }).then(() => {
-    if (resultStatus) {
+  debugLog('Enviando respuestas al Apps Script:', payload);
+
+  // Estrategia doble: intentamos POST (no-cors) y JSONP en paralelo
+  // POST no-cors envía pero no podemos leer la respuesta.
+  // JSONP nos permite confirmar que llegó y actualizar el UI.
+  try {
+    fetch(CONFIG.APPS_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).then(() => debugLog('POST enviado'))
+      .catch(err => debugLog('POST falló, se usará JSONP:', err));
+  } catch (e) {
+    debugLog('fetch no disponible, usando solo JSONP');
+  }
+
+  // JSONP como método principal de confirmación
+  saveViaJsonp(payload);
+}
+
+// Guardar via GET usando JSONP (funciona sin CORS, y también confirma la respuesta)
+function saveViaJsonp(payload) {
+  const callbackName = 'vitalaeSaveCb_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+  const params = new URLSearchParams({
+    action: 'save',
+    callback: callbackName,
+    timestamp: payload.timestamp,
+    genero: payload.genero,
+    edad: payload.edad,
+    usa: payload.usa_cannabis,
+    forma: payload.forma_uso,
+    referrer: payload.referrer,
+    ua: payload.user_agent
+  });
+
+  window[callbackName] = function(response) {
+    debugLog('Respuestas guardadas via JSONP:', response);
+    if (resultStatus && response && response.status === 'saved') {
       resultStatus.textContent = '✓ Respuestas guardadas';
       resultStatus.classList.add('visible', 'success');
     }
-  }).catch(err => {
-    console.warn('[Vitalae] Could not save to Sheets:', err);
-    // Silent failure — user still gets their WhatsApp CTA
-  });
+    const script = document.getElementById('vitalae-save-script');
+    if (script) script.remove();
+    try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
+  };
+
+  const script = document.createElement('script');
+  script.id = 'vitalae-save-script';
+  script.async = true;
+  script.src = CONFIG.APPS_SCRIPT_URL + '?' + params.toString();
+  script.onerror = () => {
+    console.warn('[Vitalae] No se pudo guardar la respuesta. Verifica la URL del Apps Script.');
+  };
+  document.head.appendChild(script);
 }
 
 // Expose openOnboarding globally
@@ -3224,26 +3273,34 @@ window.addEventListener('load', () => {
 });
 
 // ============================
-// VISITS COUNTER (JSONP — no CORS issues)
+// VISITS COUNTER (Google Apps Script via JSONP)
 // ============================
 function initVisitsCounter() {
   const coin = document.getElementById('visitsCoin');
   const valueEl = document.getElementById('visitsValue');
   if (!coin || !valueEl) return;
 
-  // Session dedup — only count once per browser session
+  if (!CONFIG.APPS_SCRIPT_URL || CONFIG.APPS_SCRIPT_URL.startsWith('REPLACE_WITH')) {
+    debugLog('Contador no configurado (falta URL de Apps Script)');
+    // Show coin with dash so it's not empty during dev
+    valueEl.textContent = '—';
+    coin.classList.add('visible');
+    return;
+  }
+
+  // Session dedup: solo contamos una visita por sesión de navegador
   const alreadyCounted = sessionStorage.getItem('vitalae_visit_counted');
-  const readOnlyParam = alreadyCounted ? '&readOnly=true' : '';
+  const action = alreadyCounted ? 'count' : 'visit';
 
-  // Unique callback name to avoid conflicts
-  const callbackName = 'vitalaeCounterCb_' + Date.now();
+  const callbackName = 'vitalaeCounterCb_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
 
-  // Timeout fallback: if counter doesn't respond in 5s, show a graceful placeholder
+  // Timeout: si el servicio no responde en 8s, mostrar placeholder
   const timeoutId = setTimeout(() => {
+    debugLog('Timeout del contador');
     valueEl.textContent = '—';
     coin.classList.add('visible');
     cleanup();
-  }, 5000);
+  }, 8000);
 
   function cleanup() {
     const script = document.getElementById('vitalae-counter-script');
@@ -3251,11 +3308,12 @@ function initVisitsCounter() {
     try { delete window[callbackName]; } catch (e) { window[callbackName] = undefined; }
   }
 
-  // Define global callback
   window[callbackName] = function(response) {
     clearTimeout(timeoutId);
-    if (response && typeof response.value !== 'undefined') {
-      animateNumber(valueEl, 0, response.value, 1400);
+    debugLog('Contador respondió:', response);
+    if (response && typeof response.count !== 'undefined') {
+      const count = Number(response.count) || 0;
+      animateNumber(valueEl, 0, count, 1400);
       if (!alreadyCounted) {
         try { sessionStorage.setItem('vitalae_visit_counted', '1'); } catch (e) {}
       }
@@ -3266,13 +3324,13 @@ function initVisitsCounter() {
     cleanup();
   };
 
-  // Load counter via JSONP
   const script = document.createElement('script');
   script.id = 'vitalae-counter-script';
   script.async = true;
-  script.src = `https://counterapi.com/api/vitalae.cl/view/homepage?callback=${callbackName}${readOnlyParam}`;
+  script.src = CONFIG.APPS_SCRIPT_URL + '?action=' + action + '&callback=' + callbackName;
   script.onerror = () => {
     clearTimeout(timeoutId);
+    console.warn('[Vitalae] Contador no disponible. Verifica la URL del Apps Script.');
     valueEl.textContent = '—';
     coin.classList.add('visible');
     cleanup();
@@ -3286,7 +3344,6 @@ function animateNumber(el, start, end, duration) {
   function tick(now) {
     const elapsed = now - startTime;
     const progress = Math.min(elapsed / duration, 1);
-    // easeOutQuart
     const eased = 1 - Math.pow(1 - progress, 4);
     const current = Math.floor(start + (end - start) * eased);
     el.textContent = formatNumber(current);

@@ -1,256 +1,163 @@
-# Vitalae — Sitio Web (Versión 2)
+# Vitalae — Sitio Web (v2.1)
 
-Sitio web profesional para Vitalae · Bienestar y Ciencia. Estático, mobile-first, optimizado para GitHub Pages.
+Sitio web profesional para Vitalae · Bienestar y Ciencia. Estático, mobile-first, listo para GitHub Pages.
 
 ## Archivos
 
 - `index.html` — Sitio completo
 - `logo.jpg` — Logo de Vitalae
-- `apps-script.gs` — Código para conectar con Google Sheets (ver más abajo)
+- `apps-script.gs` — Backend en Google Apps Script (contador + guardado del quiz en Sheets)
 
 ---
 
-## Novedades en esta versión
+## Correcciones de esta versión (v2.1)
 
-1. **Popup automático al ingresar al sitio** — Aparece 2 segundos después de cargar, con animación de entrada elegante (blur, scale, logo animado). No aparece de nuevo por 7 días si el usuario ya lo cerró.
+### 1. La "pelota que gira" ya no acelera en desktop
+El keyframe se llamaba `rotate`, colisionando con la nueva propiedad CSS `rotate` estandarizada. Además, 40 segundos era demasiado rápido para el radio grande del hero en desktop. Ahora:
+- Keyframe renombrado a `heroOrbitRotate` (sin colisiones)
+- Duración duplicada a **80 segundos** (efecto contemplativo real)
+- Agregado `will-change: transform` para performance
 
-2. **Contador de visitas con "coin"** — Esquina inferior izquierda. Logo circular con anillo dashed animado + contador dinámico. Usa el servicio counterapi.com (gratuito, sin registro, sin problemas de CORS).
+### 2. El contador de visitas ahora sí cuenta
+El problema: el servicio externo `counterapi.com` era poco confiable (soft-limits, JSONP intermitente). **Solución:** ahora el contador vive en tu propio Google Apps Script — el mismo que guarda las respuestas del quiz. Ventajas:
+- Sin dependencias externas
+- Sin CORS (Apps Script sirve JSONP nativo)
+- Puedes ver el histórico en la hoja "Contador" de tu Sheet
+- Datos 100% tuyos
 
-3. **Guardado de respuestas del cuestionario en Google Sheets** — Cada respuesta del quiz se guarda automáticamente en tu hoja de cálculo. Requiere configurar Google Apps Script (ver instrucciones abajo).
+### 3. Las respuestas del quiz ahora sí se guardan
+El problema original: la URL del Apps Script no estaba pegada (el placeholder `REPLACE_WITH_YOUR_APPS_SCRIPT_URL` seguía intacto). Además, agregué **doble estrategia** para robustez:
+- **POST** al Apps Script (rápido, silencioso)
+- **JSONP fallback** en paralelo (confirmable, evita cualquier issue de CORS)
 
-4. **Optimizaciones aplicadas al sitio completo:**
-   - Eliminada dependencia de GSAP (~90KB ahorrados)
-   - Preload del logo para mostrar instantáneo
-   - Schema.org JSON-LD para SEO (Google entiende que eres organización médica)
-   - Meta tags completos (Open Graph, Twitter Cards, keywords)
-   - Focus visible mejorado para accesibilidad
-   - Cierre del popup con tecla ESC
-   - Cierre del menú móvil al hacer clic en un link
-   - Passive event listeners para mejor scroll performance
-   - Preconnect a los servicios externos (fonts, counter, apps script)
+Si POST falla por CORS en algún navegador, el JSONP siempre funciona. Además, ahora hay confirmación visual "✓ Respuestas guardadas" en el modal al terminar.
 
 ---
 
-## PASO 1: Conectar con Google Sheets
+## Configuración (paso a paso — ~5 minutos)
 
-### 1.1 — Abrir Apps Script en tu hoja de cálculo
+### Paso 1: Instalar el Apps Script
 
-1. Abre tu Google Sheet: https://docs.google.com/spreadsheets/d/1CvDz8odzYO9t4-dRMjMcvqw41LfTZlJ0-6PnzJ51Vps/edit
-2. En el menú superior: **Extensiones → Apps Script**
-3. Se abrirá una pestaña nueva con un editor de código
-4. Borra todo el código que aparece por defecto (habrá algo como `function myFunction() {}`)
-5. Copia TODO el contenido del archivo `apps-script.gs` y pégalo dentro del editor
-6. Haz clic en el ícono de **guardar** (💾) o Ctrl+S
+1. Abre tu Google Sheet:
+   https://docs.google.com/spreadsheets/d/1CvDz8odzYO9t4-dRMjMcvqw41LfTZlJ0-6PnzJ51Vps/edit
 
-### 1.2 — Desplegar como Web App
+2. Menú → **Extensiones → Apps Script**
 
-1. Arriba a la derecha, haz clic en **Desplegar** → **Nueva implementación**
-2. Junto a "Seleccionar tipo" haz clic en el ícono de engranaje ⚙️ y elige **Aplicación web**
-3. Rellena así:
-   - **Descripción:** Vitalae quiz endpoint
+3. Se abre editor. Borra todo el código que aparece.
+
+4. Copia **todo** el contenido de `apps-script.gs` y pégalo.
+
+5. Ctrl+S para guardar (te pedirá nombre → ponle "Vitalae").
+
+### Paso 2: Desplegar como Web App
+
+1. Arriba a la derecha: **Desplegar → Nueva implementación**
+
+2. Ícono ⚙️ junto a "Seleccionar tipo" → **Aplicación web**
+
+3. Configura:
+   - **Descripción:** Vitalae endpoint
    - **Ejecutar como:** Yo (tu-email@gmail.com)
-   - **Quién tiene acceso:** ⚠️ **Cualquier persona** (importante — sin este permiso el sitio no puede enviar datos)
-4. Haz clic en **Desplegar**
+   - **Quién tiene acceso:** ⚠️ **Cualquier persona** ← paso crítico
 
-### 1.3 — Autorizar permisos
+4. **Desplegar**
 
-Google te va a pedir autorizar el script para acceder a tu hoja. Es normal:
+5. Autorizar permisos:
+   - Elegir tu cuenta
+   - "Google no verificó esta app" → **Configuración avanzada** (abajo izquierda)
+   - **Ir a Vitalae (no seguro)**
+   - **Permitir**
 
-1. Elige tu cuenta de Google
-2. Verás una pantalla que dice "Google no verificó esta app"
-3. Haz clic en **Configuración avanzada** (abajo a la izquierda)
-4. Haz clic en **Ir a Vitalae quiz endpoint (no seguro)**
-5. Haz clic en **Permitir**
+6. Copia la URL que termina en `/exec`. Se ve así:
+   `https://script.google.com/macros/s/AKfycbz...largo.../exec`
 
-### 1.4 — Copiar la URL de despliegue
+### Paso 3: Verificar que el endpoint funciona
 
-Google te mostrará una pantalla con la URL de tu Web App. Tiene esta forma:
+Antes de configurar el sitio, **pega la URL directamente en el navegador**. Debes ver algo como:
 
-```
-https://script.google.com/macros/s/AKfyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx/exec
-```
-
-Cópiala completa.
-
-### 1.5 — Configurar el sitio
-
-1. Abre `index.html` en un editor de texto
-2. Busca la línea (aproximadamente la línea 3010):
-   ```javascript
-   SHEETS_WEBAPP_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
-   ```
-3. Reemplaza `'REPLACE_WITH_YOUR_APPS_SCRIPT_URL'` por tu URL, quedando así:
-   ```javascript
-   SHEETS_WEBAPP_URL: 'https://script.google.com/macros/s/AKfy...tu-url.../exec',
-   ```
-4. Guarda el archivo
-
-### 1.6 — Verificar que funciona
-
-Después de subir el sitio a GitHub Pages:
-
-1. Abre tu sitio en un navegador (con las herramientas de desarrollo abiertas, opcional)
-2. Completa el cuestionario del popup
-3. Revisa tu Google Sheet — debería aparecer una fila nueva con "Fecha, Hora, Género, Edad, ..." como encabezados y tu respuesta debajo
-4. La hoja se llama "Respuestas" (se crea automáticamente la primera vez)
-
-**¿No funciona?** Verifica:
-- Que la URL de Apps Script esté correctamente pegada (que termine en `/exec`)
-- Que hayas elegido "Cualquier persona" en "Quién tiene acceso"
-- Que hayas autorizado los permisos completos
-
----
-
-## PASO 2: Contador de visitas
-
-**No requiere configuración.** Ya está funcionando con counterapi.com:
-
-- **Servicio:** counterapi.com (gratuito, sin registro, sin límites prácticos)
-- **Namespace:** `vitalae.cl`
-- **Métrica:** `view/homepage`
-- **Deduplicación:** una sola visita contada por sesión (usa sessionStorage)
-- **Fallback:** si el servicio falla, muestra "—" en lugar de romper el diseño
-
-Si algún día quieres ver las estadísticas completas (visitas por día, por hora), puedes acceder a:
-`https://counterapi.com/vitalae.cl/view/homepage`
-
-Si prefieres cambiar el servicio a algo más profesional (Google Analytics, Plausible, Fathom), avísame y lo integro.
-
----
-
-## PASO 3: Despliegue en GitHub Pages
-
-### 3.1 — Crear el repositorio
-
-1. Ve a https://github.com y crea un repositorio nuevo
-2. Nómbralo `vitalae` (o el nombre que prefieras)
-3. Que sea **público**
-4. NO inicialices con README, .gitignore ni licencia
-
-### 3.2 — Subir los archivos
-
-**Opción A (web):** En el repo, "uploading an existing file" → arrastra `index.html` y `logo.jpg` → commit.
-
-**Opción B (terminal):**
-```bash
-cd /ruta/donde/estan/los/archivos
-git init
-git add index.html logo.jpg
-git commit -m "Vitalae site v2"
-git branch -M main
-git remote add origin https://github.com/TU-USUARIO/vitalae.git
-git push -u origin main
+```json
+{"status":"ok","service":"Vitalae endpoint","timestamp":"2026-07-01T...","actions":["visit","count","save"]}
 ```
 
-### 3.3 — Activar GitHub Pages
+Si ves esto, funciona. Si no, revisa que hayas elegido "Cualquier persona" en el paso 2.
 
-1. En el repo → **Settings** (engranaje) → **Pages** (menú lateral)
-2. En "Source": Branch **main** / Folder **/ (root)**
-3. **Save**
-4. Espera 1-2 minutos. Tu sitio estará en `https://TU-USUARIO.github.io/vitalae/`
+### Paso 4: Configurar el sitio
 
-### 3.4 (Opcional) — Dominio propio
+Abre `index.html` en un editor. Busca:
 
-Si tienes `vitalae.cl`:
-1. En Settings → Pages → "Custom domain": escribe `vitalae.cl`
-2. En tu proveedor DNS: registro CNAME apuntando a `TU-USUARIO.github.io`
-3. Activa "Enforce HTTPS" una vez propague
+```javascript
+APPS_SCRIPT_URL: 'REPLACE_WITH_YOUR_APPS_SCRIPT_URL',
+```
 
----
+Reemplaza por:
 
-## Auditoría técnica del sitio (v2)
+```javascript
+APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfy.../exec',
+```
 
-Estas son las optimizaciones y decisiones técnicas que apliqué en esta versión:
+Guarda y sube el `index.html` a GitHub.
 
-### Performance
-- Eliminación total de librerías no usadas (GSAP ~90KB)
-- Preload del logo con `fetchpriority="high"`
-- Preconnect a `fonts.googleapis.com`, `counterapi.com`, `script.google.com`
-- Passive event listeners para scroll (mejor FPS)
-- Sin dependencias JavaScript externas (todo en el mismo archivo)
+### Paso 5: Probar en el sitio real
 
-### SEO
-- JSON-LD schema.org para MedicalBusiness (Google entiende que eres organización médica)
-- Meta tags completos: title, description, keywords, author, robots
-- Open Graph completo (link previews en WhatsApp, Instagram, Facebook)
-- Twitter Cards
-- Idioma es_CL declarado
-- Meta viewport para móvil
-
-### Accesibilidad (a11y)
-- Focus visible con outline verde primario en todos los elementos interactivos
-- aria-live en el contador de visitas (screen readers anuncian cambios)
-- Botón de cerrar el popup con aria-label
-- Cierre del popup con tecla ESC
-- Estructura semántica correcta (main, section, footer, nav)
-- Contraste de color verificado
-- prefers-reduced-motion respetado
-
-### UX
-- El popup NO se muestra a usuarios que ya lo cerraron (cooldown de 7 días vía localStorage)
-- El contador de visitas cuenta una sola vez por sesión (sessionStorage)
-- Animación del número (0 → valor final con easeOut) al aparecer el contador
-- El popup se puede cerrar con ESC, con la X, o haciendo clic afuera
-- El menú móvil se cierra automáticamente al hacer clic en un link
-- Fallback silencioso en cada llamada externa (nunca se rompe la UI)
-
-### Robustez
-- Try-catch alrededor de todas las llamadas a localStorage/sessionStorage (por si el usuario los tiene bloqueados)
-- Timeout de 5 segundos en el contador (si el servicio no responde, muestra "—")
-- Callback name único con timestamp en el JSONP (evita conflictos)
-- Cleanup del script de JSONP después de usarlo
-- El envío a Google Sheets es "fire and forget" — no bloquea la UI del usuario si falla
+1. Abre tu sitio publicado en un navegador
+2. Deberías ver el contador de visitas animarse (esquina inferior izquierda)
+3. Completa el quiz que aparece
+4. Ve a tu Google Sheet — deberías ver dos hojas nuevas:
+   - **Contador** con "Visitas totales" incrementándose
+   - **Respuestas** con tu respuesta del quiz
 
 ---
 
-## Datos que se guardan en Google Sheets
+## Diagnóstico si algo no funciona
 
-Cada respuesta del cuestionario genera una fila con:
+Si algo se ve mal, puedes habilitar el modo debug. Edita `index.html` y cambia:
 
-| Columna | Valor de ejemplo |
-|---------|-----------------|
-| Fecha | 2026-07-01 |
-| Hora | 15:32:41 |
-| Género | Femenino |
-| Edad | Entre 25 y 64 años |
-| Usa cannabis | Sí |
-| Forma de uso | Vaporización |
-| Referrer | https://instagram.com |
-| User Agent | Mozilla/5.0 (iPhone; ...) |
+```javascript
+DEBUG: false
+```
 
-**No se guardan:** IPs, nombres, emails, teléfonos, ni identificadores personales. El cuestionario es 100% anónimo tal como se promete al usuario en el popup.
+Por:
+
+```javascript
+DEBUG: true
+```
+
+Abre el sitio, abre las **herramientas de desarrollo** (F12) → **Console**. Verás mensajes de diagnóstico detallados.
+
+### Contador muestra "—"
+Significa que el Apps Script no respondió a tiempo (8 segundos). Causas:
+- URL mal pegada (que empiece con `https://script.google.com/macros/s/` y termine en `/exec`)
+- No configuraste "Cualquier persona" en el despliegue
+- El script está aún propagándose (espera 1-2 minutos tras desplegar)
+
+### Respuestas del quiz no aparecen en Sheets
+- Verifica en Console de tu navegador que no diga "Apps Script URL no configurada"
+- Abre la URL del Web App directamente — si ves el JSON de status, funciona
+- Revisa que la hoja "Respuestas" no la hayas renombrado
+- Espera unos segundos y refresca el Sheet — Google a veces demora en mostrar filas nuevas
+
+### El popup no aparece en tu segunda visita
+Es intencional. El popup respeta al usuario: solo aparece una vez cada 7 días (localStorage). Para forzarlo:
+- Modo incógnito, o
+- Abre DevTools → Application → Local Storage → borra `vitalae_popup_seen`
 
 ---
 
-## Mantenimiento y cambios comunes
+## Despliegue en GitHub Pages
 
-### Cambiar el link de WhatsApp
+1. Crea repo público `vitalae` en GitHub
+2. Sube `index.html` y `logo.jpg` (no subas `apps-script.gs` — ese vive en tu Sheet)
+3. Settings → Pages → Branch main → root → Save
+4. Espera 1-2 minutos → sitio en `https://TU-USUARIO.github.io/vitalae/`
 
-Busca todas las apariciones de `walink.co/0y1pj6` en `index.html` y reemplaza.
+## Actualizar el Apps Script sin cambiar la URL
 
-### Cambiar el delay del popup inicial
+Si algún día tocas el código de `apps-script.gs`:
 
-En el bloque CONFIG del script, línea `POPUP_DELAY: 2200` (milisegundos). 2200 = 2.2 segundos.
-
-### Cambiar la frecuencia de reaparición del popup
-
-`POPUP_COOLDOWN_DAYS: 7` — si el usuario cierra el popup, no vuelve a aparecer por 7 días. Si lo quieres siempre visible, cambia a `0`.
-
-### Ocultar el contador de visitas
-
-En el CSS busca `.visits-coin {` y agrega `display: none !important;` como primera línea.
-
-### Ver las respuestas del quiz en tiempo real
-
-Solo abre tu Google Sheet. Cada nueva respuesta aparece automáticamente como una fila nueva.
-
-### Actualizar el Apps Script
-
-Si cambias el código de `apps-script.gs`, necesitas:
-1. Pegar el nuevo código en el editor de Apps Script
-2. Desplegar → **Administrar implementaciones**
-3. Editar la implementación existente (ícono lápiz)
-4. En "Versión": elige "Nueva versión"
+1. Pega el nuevo código en el editor de Apps Script
+2. **Desplegar → Administrar implementaciones** (no "Nueva implementación")
+3. Ícono lápiz en tu implementación existente
+4. Versión → **Nueva versión**
 5. Desplegar
 
-**Importante:** No hagas "Nueva implementación" (crea otra URL). Usa "Administrar implementaciones" para actualizar la existente y mantener la misma URL en tu sitio.
+Así mantienes la misma URL y no tienes que actualizar el sitio.
